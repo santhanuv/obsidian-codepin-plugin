@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-git-relay-plugin",
+  "name": "Git Relay",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Project code context from Git repositories directly into notes",
+  "author": "Santhanu V",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}
