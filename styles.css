@@ -1,0 +1,28 @@
+/*
+
+This CSS file will be included with your plugin, and
+available in the app when your plugin is enabled.
+
+If your plugin does not need CSS, delete this file.
+
+*/
+
+.git-relay-header {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
+
+.git-relay-footer {
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  margin-top: 8px;
+  background-color: var(--background-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+}
