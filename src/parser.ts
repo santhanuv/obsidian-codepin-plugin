@@ -1,19 +1,33 @@
 import { ParseErrors } from "./diagnostics";
 
+const VALID_KEYS = new Set([
+  "repo",
+  "path",
+  "lang",
+  "lines",
+  "mode",
+  "branch",
+  "commit",
+  "context",
+  "note",
+]);
+
 export const DEFAULT_RELAY_CONTEXT = 3;
 
 export type RelayLineRange = { start: number; end: number | null };
 
 export type GitHost = "gitlab" | "github" | "unknown";
 export type RelayMode = "code" | "diff";
+export type GitRef =
+  | { type: "branch"; value: string }
+  | { type: "commit"; value: string };
 
 export interface GitRelaySpec {
   repo: string;
   path: string;
   lang: string;
   host: GitHost;
-  branch: string | null;
-  commit: string | null; // commit takes precedence over branch
+  ref: GitRef | null;
   lines: RelayLineRange;
   mode: RelayMode;
   context: number; // context is valid only in diff mode
@@ -35,34 +49,80 @@ export function detectGitHost(repo: string): GitHost {
 }
 
 export function parseSpec(source: string): ParseSpecResult {
-  const rawSpec: Partial<GitRelaySpec> = {};
+  const draftSpec: Partial<GitRelaySpec> = {};
 
   for (const line of source.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx === -1) continue;
+    const match = trimmed.match(/^([a-z]+)\s*:\s*(.*)$/i);
 
-    const key = trimmed.slice(0, colonIdx).trim();
-    const val = trimmed.slice(colonIdx + 1).trim();
+    if (!match) {
+      return {
+        ok: false,
+        error: ParseErrors.invalidFieldFormat(trimmed),
+      };
+    }
+
+    const [, rawKey = "", rawVal = ""] = match;
+
+    const key = rawKey.trim().toLowerCase();
+    const val = rawVal.trim();
+
+    if (!VALID_KEYS.has(key)) {
+      return {
+        ok: false,
+        error: ParseErrors.unknownField(key),
+      };
+    }
+
+    if (Object.hasOwn(draftSpec, key)) {
+      return {
+        ok: false,
+        error: ParseErrors.duplicateField(key),
+      };
+    }
+
+    if (!val) {
+      return {
+        ok: false,
+        error: ParseErrors.missingValue(key),
+      };
+    }
 
     switch (key) {
       case "repo":
-        rawSpec.repo = val;
+        draftSpec.repo = val;
         break;
-      case "branch":
-        rawSpec.branch = val;
-        break;
+
       case "lang":
-        rawSpec.lang = val;
+        draftSpec.lang = val;
         break;
-      case "commit":
-        rawSpec.commit = val;
-        break;
+
       case "path":
-        rawSpec.path = val;
+        draftSpec.path = val;
         break;
+
+      case "branch":
+      case "commit": {
+        if (draftSpec.ref) {
+          return {
+            ok: false,
+            error:
+              draftSpec.ref.type === key
+                ? ParseErrors.duplicateField(key)
+                : ParseErrors.conflictingRef(),
+          };
+        }
+
+        draftSpec.ref = {
+          type: key,
+          value: val,
+        };
+
+        break;
+      }
+
       case "mode": {
         if (val !== "code" && val !== "diff") {
           return {
@@ -71,9 +131,10 @@ export function parseSpec(source: string): ParseSpecResult {
           };
         }
 
-        rawSpec.mode = val;
+        draftSpec.mode = val;
         break;
       }
+
       case "context": {
         const context = parseInt(val, 10);
 
@@ -91,11 +152,11 @@ export function parseSpec(source: string): ParseSpecResult {
           };
         }
 
-        rawSpec.context = context;
+        draftSpec.context = context;
         break;
       }
       case "note":
-        rawSpec.note = val;
+        draftSpec.note = val;
         break;
       case "lines": {
         const match = val.match(/^(\d+)?-(\d+)?$/);
@@ -119,35 +180,34 @@ export function parseSpec(source: string): ParseSpecResult {
           };
         }
 
-        rawSpec.lines = { start, end };
+        draftSpec.lines = { start, end };
         break;
       }
     }
   }
 
-  if (!rawSpec.repo) {
+  if (!draftSpec.repo) {
     return { ok: false, error: ParseErrors.missingField("repo") };
   }
 
-  if (!rawSpec.path) {
+  if (!draftSpec.path) {
     return { ok: false, error: ParseErrors.missingField("path") };
   }
 
-  if (!rawSpec.lang) {
+  if (!draftSpec.lang) {
     return { ok: false, error: ParseErrors.missingField("lang") };
   }
 
   const spec: GitRelaySpec = {
-    repo: rawSpec.repo,
-    path: rawSpec.path,
-    lang: rawSpec.lang,
-    lines: rawSpec.lines ?? { start: 1, end: null },
-    host: detectGitHost(rawSpec.repo),
-    branch: rawSpec.branch ?? null,
-    commit: rawSpec.commit ?? null,
-    mode: rawSpec.mode ?? "code",
-    context: rawSpec.context ?? DEFAULT_RELAY_CONTEXT,
-    note: rawSpec.note ?? null,
+    repo: draftSpec.repo,
+    path: draftSpec.path,
+    lang: draftSpec.lang,
+    lines: draftSpec.lines ?? { start: 1, end: null },
+    host: detectGitHost(draftSpec.repo),
+    ref: draftSpec.ref ?? null,
+    mode: draftSpec.mode ?? "code",
+    context: draftSpec.context ?? DEFAULT_RELAY_CONTEXT,
+    note: draftSpec.note ?? null,
   };
 
   return { ok: true, spec };
