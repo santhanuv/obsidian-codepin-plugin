@@ -1,15 +1,6 @@
 import { MarkdownRenderChild, MarkdownRenderer, Plugin } from "obsidian";
-import { parseSpec } from "parser";
-
-// Hardcoded until real fetch lands
-const MOCK_LINES = [
-  "#include <stdio.h>",
-  "",
-  "int main() {",
-  '    printf("hello, world\\n");',
-  "    return 1;",
-  "}",
-];
+import { parseSpec } from "./parser";
+import { getGitFile } from "./provider";
 
 export default class GitRelayPlugin extends Plugin {
   async onload() {
@@ -31,9 +22,23 @@ export default class GitRelayPlugin extends Plugin {
         }
         const spec = parseResult.spec;
 
-        const lines = MOCK_LINES.slice(
+        const fetched = await getGitFile({
+          repoUrl: spec.repo,
+          path: spec.path,
+          ref: spec.ref,
+        });
+
+        if (!fetched.ok) {
+          container.createEl("p", {
+            text: `Error: ${fetched.error}`,
+            cls: "git-relay-error-text",
+          });
+          return;
+        }
+
+        const lines = fetched.content.slice(
           spec.lines.start - 1,
-          spec.lines.end ?? MOCK_LINES.length,
+          spec.lines.end ?? fetched.content.length,
         );
 
         const header = container.createEl("div", { cls: "git-relay-header" });
@@ -46,7 +51,7 @@ export default class GitRelayPlugin extends Plugin {
         const child = new MarkdownRenderChild(codeContainer);
         ctx.addChild(child);
 
-        const markdown = "```" + spec.lang + "\n" + lines.join("\n") + "\n```";
+        const markdown = `\`\`\`${spec.lang}\n${lines.join("\n")}\n\`\`\``;
         await MarkdownRenderer.render(
           this.app,
           markdown,
