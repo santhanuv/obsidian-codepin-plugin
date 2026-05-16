@@ -1,214 +1,230 @@
 import { ParseErrors } from "./diagnostics";
 
-const VALID_KEYS = new Set([
-  "repo",
-  "path",
-  "lang",
-  "lines",
-  "mode",
-  "branch",
-  "commit",
-  "context",
-  "note",
-]);
+const SPECIAL_FILENAMES: Record<string, string> = {
+  Dockerfile: "dockerfile",
+  Makefile: "makefile",
+  Justfile: "make",
+};
 
-export const DEFAULT_RELAY_CONTEXT = 3;
+type RelayLineRange = { start: number; end: number | null };
 
-export type RelayLineRange = { start: number; end: number | null };
+type GitHost = "gitlab" | "github" | "generic";
 
-export type GitHost = "gitlab" | "github" | "unknown";
-export type RelayMode = "code" | "diff";
-export type GitRef =
-  | { type: "branch"; value: string }
-  | { type: "commit"; value: string };
-
-export interface GitRelaySpec {
-  repo: string;
-  path: string;
-  lang: string;
+interface GitRelayTarget {
+  permalink: URL;
   host: GitHost;
-  ref: GitRef | null;
+  contentURL: URL;
+  name: string;
   lines: RelayLineRange;
-  mode: RelayMode;
-  context: number; // context is valid only in diff mode
-  note: string | null;
+  lang?: string | undefined;
 }
 
-export type ParseSpecResult =
-  | { ok: true; spec: GitRelaySpec }
+type ParseResult =
+  | { ok: true; target: GitRelayTarget }
   | { ok: false; error: string };
 
-export function detectGitHost(repo: string): GitHost {
-  if (repo.includes("gitlab.com")) {
-    return "gitlab";
-  } else if (repo.includes("github.com")) {
-    return "github";
+type FileMetadata = { filename: string; extension?: string };
+
+export function parseSpec(source: string): ParseResult {
+  const lines = source
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0 || lines.length > 2) {
+    return {
+      ok: false,
+      error: ParseErrors.invalidSpec(),
+    };
   }
 
-  return "unknown";
+  const [permalink, langLine] = lines;
+
+  if (!permalink) {
+    return {
+      ok: false,
+      error: ParseErrors.missingPermalink(),
+    };
+  }
+
+  let lang: string | undefined;
+  if (langLine) {
+    const [key, value] = langLine
+      .split(":")
+      .map((pair) => pair.trim())
+      .filter(Boolean);
+
+    if (key !== "lang" || !value) {
+      return {
+        ok: false,
+        error: ParseErrors.invalidLangLine(),
+      };
+    }
+
+    lang = value;
+  }
+
+  return parsePermalink(permalink, lang);
 }
 
-export function parseSpec(source: string): ParseSpecResult {
-  const draftSpec: Partial<GitRelaySpec> = {};
+function parsePermalink(permalink: string, lang?: string): ParseResult {
+  let sourceURL: URL;
 
-  for (const line of source.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+  try {
+    sourceURL = new URL(permalink);
+  } catch {
+    return {
+      ok: false,
+      error: ParseErrors.invalidPermalikLine(),
+    };
+  }
 
-    const match = trimmed.match(/^([a-z]+)\s*:\s*(.*)$/i);
+  if (sourceURL.protocol !== "https:" && sourceURL.protocol !== "http:") {
+    return {
+      ok: false,
+      error: ParseErrors.unsupportedProtocol(sourceURL.protocol),
+    };
+  }
 
-    if (!match) {
-      return {
-        ok: false,
-        error: ParseErrors.invalidFieldFormat(trimmed),
-      };
-    }
+  let contentURL: URL;
+  let host: GitHost;
 
-    const [, rawKey = "", rawVal = ""] = match;
-
-    const key = rawKey.trim().toLowerCase();
-    const val = rawVal.trim();
-
-    if (!VALID_KEYS.has(key)) {
-      return {
-        ok: false,
-        error: ParseErrors.unknownField(key),
-      };
-    }
-
-    if (Object.hasOwn(draftSpec, key)) {
-      return {
-        ok: false,
-        error: ParseErrors.duplicateField(key),
-      };
-    }
-
-    if (!val) {
-      return {
-        ok: false,
-        error: ParseErrors.missingValue(key),
-      };
-    }
-
-    switch (key) {
-      case "repo":
-        draftSpec.repo = val;
-        break;
-
-      case "lang":
-        draftSpec.lang = val;
-        break;
-
-      case "path":
-        draftSpec.path = val;
-        break;
-
-      case "branch":
-      case "commit": {
-        if (draftSpec.ref) {
-          return {
-            ok: false,
-            error:
-              draftSpec.ref.type === key
-                ? ParseErrors.duplicateField(key)
-                : ParseErrors.conflictingRef(),
-          };
-        }
-
-        draftSpec.ref = {
-          type: key,
-          value: val,
+  switch (sourceURL.hostname) {
+    case "github.com": {
+      const rawURL = toGithubRawURL(sourceURL);
+      if (!rawURL) {
+        return {
+          ok: false,
+          error: ParseErrors.invalidGithubPermalink(),
         };
-
-        break;
       }
 
-      case "mode": {
-        if (val !== "code" && val !== "diff") {
-          return {
-            ok: false,
-            error: ParseErrors.invalidMode(),
-          };
-        }
+      contentURL = rawURL;
+      host = "github";
 
-        draftSpec.mode = val;
-        break;
+      break;
+    }
+
+    case "gitlab.com": {
+      const rawURL = toGitlabRawURL(sourceURL);
+      if (!rawURL) {
+        return {
+          ok: false,
+          error: ParseErrors.invalidGitlabPermalink(),
+        };
       }
 
-      case "context": {
-        const context = parseInt(val, 10);
+      contentURL = rawURL;
+      host = "gitlab";
 
-        if (Number.isNaN(context)) {
-          return {
-            ok: false,
-            error: ParseErrors.invalidContext(),
-          };
-        }
+      break;
+    }
 
-        if (context < 0) {
-          return {
-            ok: false,
-            error: ParseErrors.invalidContext(),
-          };
-        }
+    default: {
+      contentURL = new URL(sourceURL);
+      host = "generic";
 
-        draftSpec.context = context;
-        break;
-      }
-      case "note":
-        draftSpec.note = val;
-        break;
-      case "lines": {
-        const match = val.match(/^(\d+)?-(\d+)?$/);
-
-        if (!match) {
-          return {
-            ok: false,
-            error: ParseErrors.invalidLinesFormat(),
-          };
-        }
-
-        const [, startStr, endStr] = match;
-
-        const start = startStr ? parseInt(startStr) : 1;
-        const end = endStr ? parseInt(endStr) : null;
-
-        if (end !== null && start > end) {
-          return {
-            ok: false,
-            error: ParseErrors.invalidLineRange(),
-          };
-        }
-
-        draftSpec.lines = { start, end };
-        break;
-      }
+      break;
     }
   }
 
-  if (!draftSpec.repo) {
-    return { ok: false, error: ParseErrors.missingField("repo") };
+  // hashes are renderer metadata
+  contentURL.hash = "";
+
+  let lineRange: RelayLineRange | null = { start: 1, end: null };
+
+  if (sourceURL.hash) {
+    lineRange = parseLineRange(sourceURL.hash);
+    if (!lineRange) {
+      return {
+        ok: false,
+        error: ParseErrors.invalidLineRange(),
+      };
+    }
+
+    if (
+      lineRange.start < 1 ||
+      (lineRange.end && lineRange.start > lineRange.end)
+    ) {
+      return {
+        ok: false,
+        error: ParseErrors.invalidLineNumbers(),
+      };
+    }
   }
 
-  if (!draftSpec.path) {
-    return { ok: false, error: ParseErrors.missingField("path") };
+  const fileMetadata = getFileMetadata(contentURL.pathname);
+
+  if (!lang) {
+    lang = fileMetadata?.extension;
   }
 
-  if (!draftSpec.lang) {
-    return { ok: false, error: ParseErrors.missingField("lang") };
-  }
-
-  const spec: GitRelaySpec = {
-    repo: draftSpec.repo,
-    path: draftSpec.path,
-    lang: draftSpec.lang,
-    lines: draftSpec.lines ?? { start: 1, end: null },
-    host: detectGitHost(draftSpec.repo),
-    ref: draftSpec.ref ?? null,
-    mode: draftSpec.mode ?? "code",
-    context: draftSpec.context ?? DEFAULT_RELAY_CONTEXT,
-    note: draftSpec.note ?? null,
+  const relayTarget: GitRelayTarget = {
+    permalink: sourceURL,
+    host,
+    contentURL: contentURL,
+    lines: lineRange,
+    name: fileMetadata?.filename ?? permalink.toString(),
+    lang: lang,
   };
 
-  return { ok: true, spec };
+  return { ok: true, target: relayTarget };
+}
+
+function toGithubRawURL(permalink: URL): URL | null {
+  const parts = permalink.pathname.split("/");
+
+  if (parts[3] !== "blob") {
+    return null;
+  }
+
+  const rawParts = [...parts];
+  rawParts.splice(3, 1);
+
+  return new URL(`https://raw.githubusercontent.com${rawParts.join("/")}`);
+}
+
+function toGitlabRawURL(permalink: URL): URL | null {
+  if (!permalink.pathname.includes("/-/blob/")) {
+    return null;
+  }
+
+  return new URL(
+    `${permalink.origin}${permalink.pathname.replace("/-/blob/", "/-/raw/")}`,
+  );
+}
+
+function parseLineRange(hash: string): RelayLineRange | null {
+  const match = hash.match(/^#L(\d+)(?:-L?(\d+))?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, startStr, endStr] = match;
+
+  return {
+    start: startStr ? parseInt(startStr, 10) : 1,
+    end: endStr ? parseInt(endStr, 10) : null,
+  };
+}
+
+function getFileMetadata(pathname: string): FileMetadata | undefined {
+  const filename = pathname.split("/").pop();
+
+  if (!filename) {
+    return undefined;
+  }
+
+  const special = SPECIAL_FILENAMES[filename];
+  if (special) {
+    return { filename, extension: special };
+  }
+
+  const extension = filename.split(".").pop();
+  if (!extension) {
+    return { filename };
+  }
+
+  return { filename, extension: extension };
 }

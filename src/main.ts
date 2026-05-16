@@ -1,6 +1,8 @@
+import { getFetchErrorMessage } from "./diagnostics";
+import { fetchText } from "./http-client";
 import { MarkdownRenderChild, MarkdownRenderer, Plugin } from "obsidian";
+
 import { parseSpec } from "./parser";
-import { getGitFile } from "./provider";
 
 export default class GitRelayPlugin extends Plugin {
   async onload() {
@@ -20,38 +22,54 @@ export default class GitRelayPlugin extends Plugin {
           });
           return;
         }
-        const spec = parseResult.spec;
 
-        const fetched = await getGitFile({
-          repoUrl: spec.repo,
-          path: spec.path,
-          ref: spec.ref,
-        });
+        const fetchResult = await fetchText(
+          parseResult.target.contentURL.toString(),
+        );
 
-        if (!fetched.ok) {
+        if (!fetchResult.ok) {
+          console.error("fetch failed: ", {
+            source,
+            status: fetchResult.status,
+            body: fetchResult.body,
+          });
           container.createEl("p", {
-            text: `Error: ${fetched.error}`,
+            text: `Error: ${getFetchErrorMessage(fetchResult.status)}`,
             cls: "git-relay-error-text",
           });
           return;
         }
 
-        const lines = fetched.content.slice(
-          spec.lines.start - 1,
-          spec.lines.end ?? fetched.content.length,
+        const text = fetchResult.text;
+        const { start: startLine, end: endLine } = parseResult.target.lines;
+
+        const fileLines = text.split(/\r?\n/);
+        let snippetLines = fileLines.slice(
+          startLine - 1,
+          endLine ?? fileLines.length,
         );
 
+        const isPartialSnippet =
+          startLine !== 1 || (endLine !== null && endLine !== fileLines.length);
+        if (isPartialSnippet) {
+          snippetLines = dedent(snippetLines);
+        }
+
         const header = container.createEl("div", { cls: "git-relay-header" });
-        header.createEl("span", { text: `${spec.repo}/${spec.path}` });
+        header.createEl("span", {
+          text: `${parseResult.target.name}`,
+        });
 
         const codeContainer = container.createDiv({
           cls: "git-relay-code",
         });
-
         const child = new MarkdownRenderChild(codeContainer);
         ctx.addChild(child);
 
-        const markdown = `\`\`\`${spec.lang}\n${lines.join("\n")}\n\`\`\``;
+        const lang = parseResult.target.lang ?? "";
+        const content = snippetLines.join("\n");
+
+        const markdown = `\`\`\`${lang}\n${content}\n\`\`\``;
         await MarkdownRenderer.render(
           this.app,
           markdown,
@@ -59,14 +77,26 @@ export default class GitRelayPlugin extends Plugin {
           ctx.sourcePath,
           child,
         );
-
-        if (spec.note) {
-          container.createEl("div", {
-            text: `${spec.note}`,
-            cls: "git-relay-footer",
-          });
-        }
       },
     );
   }
+}
+
+function dedent(lines: string[]): string[] {
+  let minIndent = Infinity;
+
+  for (const line of lines) {
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    const indent = line.length - line.trimStart().length;
+    minIndent = Math.min(minIndent, indent);
+  }
+
+  if (minIndent === Infinity || minIndent === 0) {
+    return lines;
+  }
+
+  return lines.map((line) => line.slice(minIndent));
 }
