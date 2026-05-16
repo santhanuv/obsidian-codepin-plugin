@@ -1,37 +1,26 @@
 import { requestUrl } from "obsidian";
 
-export type HttpResponse<T> =
-  | { ok: true; data: T }
+export type FetchTextResult =
+  | { ok: true; text: string }
   | { ok: false; status: number; body: string };
 
-export interface HttpClient {
-  getJson<T>(
-    url: string,
-    headers?: Record<string, string>,
-  ): Promise<HttpResponse<T>>;
-}
-
-export async function getJson<T>(
-  url: string,
-  headers: Record<string, string> = {},
-): Promise<HttpResponse<T>> {
+export async function fetchText(url: string): Promise<FetchTextResult> {
   const response = await requestUrl({
     url,
     method: "GET",
-    headers,
     throw: false,
   });
 
   if (response.status !== 200) {
     return {
-      status: response.status,
       ok: false,
+      status: response.status,
       body: response.text,
     };
   }
 
   return {
     ok: true,
-    data: response.json as T,
+    text: response.text,
   };
 }

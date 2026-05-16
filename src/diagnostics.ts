@@ -1,56 +1,54 @@
 export const ParseErrors = {
-  invalidFieldFormat: (line: string) =>
-    `Invalid field format. Expected 'key: value': '${line}'`,
+  invalidSpec: () =>
+    "Invalid git-relay block. Expected a permalink on line 1 and optional metadata on line 2 only.",
 
-  missingField: (field: string) => `Missing required field: '${field}'.`,
+  missingPermalink: () =>
+    "Missing permalink on line 1. Expected a GitHub, GitLab, or raw content URL.",
 
-  missingValue: (field: string) =>
-    `Field '${field}' requires a non-empty value.`,
+  invalidPermalikLine: () => "Invalid line 1. Expected a permalink URL.",
 
-  duplicateField: (field: string) => `Duplicate field: '${field}'.`,
+  invalidLangLine: () =>
+    "Invalid line 2. Expected a metadata field in the format 'key: value'.",
 
-  unknownField: (field: string) => `Unknown field: '${field}'.`,
+  unsupportedProtocol: (protocol: string) =>
+    `Unsupported URL protocol: '${protocol}'. Expected 'https://' or 'http://'.`,
 
-  invalidMode: () => "Invalid 'mode' value. Expected 'code' or 'diff'.",
+  invalidGithubPermalink: () =>
+    "Expected a GitHub file permalink pointing to a code file. Example: 'https://github.com/<repo>/blob/<revision>/<path>#Lx-Ly'.",
 
-  invalidContext: () =>
-    "Invalid 'context' value. Expected a non-negative number.",
-
-  invalidLinesFormat: () => "Invalid 'lines' format. Expected 'start-end'.",
+  invalidGitlabPermalink: () =>
+    "Expected a GitLab file permalink pointing to a code file. Example: 'https://gitlab.com/<repo>/-/blob/<revision>/<path>#Lx-Ly'.",
 
   invalidLineRange: () =>
-    "Invalid 'lines' range. Start line must be less than or equal to end line.",
+    "Invalid line range. Expected '#Lx', '#Lx-Ly', or '#Lx-y'.",
 
-  conflictingRef: () => "Cannot specify both 'branch' and 'commit'.",
+  invalidLineNumbers: () =>
+    "Line numbers must be greater than 0 and start line must not exceed end line.",
 };
 
-export const GithubErrors = {
-  invalidRepositoryUrl: () =>
-    "Invalid GitHub repository URL. Expected format: https://github.com/<owner>/<repo>",
+export const FetchErrors = {
+  fetchFailed: () => "Failed to fetch content.",
 
-  unsupportedContentEncoding: (encoding: string) =>
-    `Unsupported GitHub content encoding: '${encoding}'.`,
+  fileNotFound: () => "Content not found. Verify the permalink or content URL.",
 
-  fetchFailed: () => "Failed to fetch GitHub file.",
-
-  fileNotFound: () =>
-    "GitHub file not found. Verify the repository URL, file path, and ref.",
-
-  accessDenied: () => "GitHub API rate limit exceeded or access denied.",
+  accessDenied: () =>
+    "Access denied or rate limit exceeded while fetching content.",
 
   requestFailed: (status: number) =>
-    `GitHub request failed with status ${status}.`,
+    `Content request failed with status ${status}.`,
 };
 
-export function getGithubFetchErrorMessage(status: number): string {
+export function getFetchErrorMessage(status: number): string {
   switch (status) {
     case 404:
-      return GithubErrors.fileNotFound();
+      return FetchErrors.fileNotFound();
 
+    case 401:
     case 403:
-      return GithubErrors.accessDenied();
+    case 429:
+      return FetchErrors.accessDenied();
 
     default:
-      return GithubErrors.requestFailed(status);
+      return FetchErrors.requestFailed(status);
   }
 }

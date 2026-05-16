@@ -1,398 +1,192 @@
-import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_RELAY_CONTEXT, detectGitHost, parseSpec } from "./parser";
-import { ParseErrors } from "./diagnostics";
+import { describe, expect, it } from "vitest";
 
-const expectOk = vi.defineHelper((source: string) => {
-  const result = parseSpec(source);
-
-  expect(result.ok).toBe(true);
-
-  if (!result.ok) {
-    throw new Error("Expected successful parse");
-  }
-
-  return result.spec;
-});
-
-describe("detectGitHost", () => {
-  it("detects github repositories", () => {
-    expect(detectGitHost("https://github.com/example/repo")).toBe("github");
-  });
-
-  it("detects gitlab repositories", () => {
-    expect(detectGitHost("https://gitlab.com/example/repo")).toBe("gitlab");
-  });
-
-  it("returns unknown for unsupported hosts", () => {
-    expect(detectGitHost("https://example.com/repo")).toBe("unknown");
-  });
-});
+import { parseSpec } from "./parser";
 
 describe("parseSpec", () => {
-  const minimalSpec = `
-    repo: https://github.com/example/repo
-    path: src/main.c
-    lang: c
-  `;
+  it("parses a github permalink", () => {
+    const result = parseSpec(
+      `https://github.com/test-owner/test/blob/main/file.ts#L10-L20`,
+    );
 
-  it("parses a minimal valid spec", () => {
-    const spec = expectOk(minimalSpec);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
 
-    expect(spec.repo).toBe("https://github.com/example/repo");
+    expect(result.target.host).toBe("github");
+    expect(result.target.contentURL.toString()).toBe(
+      "https://raw.githubusercontent.com/test-owner/test/main/file.ts",
+    );
 
-    expect(spec.path).toBe("src/main.c");
+    expect(result.target.lines).toEqual({
+      start: 10,
+      end: 20,
+    });
 
-    expect(spec.lang).toBe("c");
-
-    expect(spec.host).toBe("github");
+    expect(result.target.lang).toBe("ts");
+    expect(result.target.name).toBe("file.ts");
   });
 
-  describe("defaults", () => {
-    it("applies default values", () => {
-      const spec = expectOk(minimalSpec);
+  it("parses a gitlab permalink", () => {
+    const result = parseSpec(
+      `https://gitlab.com/group/project/-/blob/main/src/app.go#L10-20`,
+    );
 
-      expect(spec.ref).toBeNull();
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
 
-      expect(spec.mode).toBe("code");
+    expect(result.target.host).toBe("gitlab");
+    expect(result.target.contentURL.toString()).toBe(
+      "https://gitlab.com/group/project/-/raw/main/src/app.go",
+    );
 
-      expect(spec.context).toBe(DEFAULT_RELAY_CONTEXT);
-
-      expect(spec.lines).toEqual({
-        start: 1,
-        end: null,
-      });
-
-      expect(spec.note).toBeNull();
+    expect(result.target.lines).toEqual({
+      start: 10,
+      end: 20,
     });
+
+    expect(result.target.lang).toBe("go");
   });
 
-  describe("required fields", () => {
-    it("rejects missing repo", () => {
-      expect(
-        parseSpec(`
-        path: src/main.c
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingField("repo"),
-      });
-    });
+  it("supports generic raw urls", () => {
+    const result = parseSpec(`https://example.com/file.rs`);
 
-    it("rejects missing path", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingField("path"),
-      });
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
 
-    it("rejects missing lang", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingField("lang"),
-      });
-    });
+    expect(result.target.host).toBe("generic");
+    expect(result.target.contentURL.toString()).toBe(
+      "https://example.com/file.rs",
+    );
 
-    it("rejects empty repo", () => {
-      expect(
-        parseSpec(`
-        repo:
-        path: src/main.c
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingValue("repo"),
-      });
-    });
+    expect(result.target.lang).toBe("rs");
+  });
 
-    it("rejects empty path", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path:
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingValue("path"),
-      });
-    });
+  it("supports explicit language override", () => {
+    const result = parseSpec(`
+      https://example.com/file.txt
+      lang: ts
+    `);
 
-    it("rejects empty lang", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang:
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingValue("lang"),
-      });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.target.lang).toBe("ts");
+  });
+
+  it("defaults line range to full file", () => {
+    const result = parseSpec(`
+      https://example.com/file.ts
+    `);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.target.lines).toEqual({
+      start: 1,
+      end: null,
     });
   });
 
-  describe("line parsing", () => {
-    it.each([
-      ["10-20", { start: 10, end: 20 }],
-      ["10-", { start: 10, end: null }],
-      ["-20", { start: 1, end: 20 }],
-      ["-", { start: 1, end: null }],
-    ])("parses valid line range '%s'", (lines, expected) => {
-      const spec = expectOk(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        lines: ${lines}
-      `);
+  it("supports github single line anchors", () => {
+    const result = parseSpec(`
+      https://github.com/org/repo/blob/main/file.ts#L15
+    `);
 
-      expect(spec.lines).toEqual(expected);
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
 
-    it("rejects invalid line ranges", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        lines: 20-10
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.invalidLineRange(),
-      });
+    expect(result.target.lines).toEqual({
+      start: 15,
+      end: null,
     });
   });
 
-  describe("mode parsing", () => {
-    it("rejects invalid modes", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        mode: invalid
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.invalidMode(),
-      });
-    });
+  it("rejects invalid permalink urls", () => {
+    const result = parseSpec(`not-a-url`);
+    expect(result.ok).toBe(false);
   });
 
-  describe("context parsing", () => {
-    it("rejects non-numeric context", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        context: abc
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.invalidContext(),
-      });
-    });
-
-    it("rejects negative context", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        context: -1
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.invalidContext(),
-      });
-    });
+  it("rejects unsupported protocols", () => {
+    const result = parseSpec(`ftp://example.com/file.ts`);
+    expect(result.ok).toBe(false);
   });
 
-  describe("ref parsing", () => {
-    it("parses branch refs", () => {
-      const spec = expectOk(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        branch: main
-      `);
-
-      expect(spec.ref).toEqual({
-        type: "branch",
-        value: "main",
-      });
-    });
-
-    it("parses commit refs", () => {
-      const spec = expectOk(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        commit: abc123
-      `);
-
-      expect(spec.ref).toEqual({
-        type: "commit",
-        value: "abc123",
-      });
-    });
-
-    it("rejects branch and commit refs together", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        branch: main
-        commit: abc123
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.conflictingRef(),
-      });
-    });
-
-    it("rejects empty branch refs", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        branch:
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingValue("branch"),
-      });
-    });
-
-    it("rejects empty commit refs", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        commit:
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.missingValue("commit"),
-      });
-    });
-
-    it("rejects duplicate branch fields", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        branch: main
-        branch: dev
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.duplicateField("branch"),
-      });
-    });
-
-    it("rejects duplicate commit fields", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        commit: abc
-        commit: def
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.duplicateField("commit"),
-      });
-    });
+  it("rejects invalid github permalinks", () => {
+    const result = parseSpec(`https://github.com/org/repo/tree/main/file.ts`);
+    expect(result.ok).toBe(false);
   });
 
-  describe("syntax validation", () => {
-    it("rejects malformed field syntax", () => {
-      expect(
-        parseSpec(`
-        repo https://github.com/example/repo
-        path: src/main.c
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.invalidFieldFormat(
-          "repo https://github.com/example/repo",
-        ),
-      });
-    });
-
-    it("rejects unknown fields", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        path: src/main.c
-        lang: c
-        brnch: main
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.unknownField("brnch"),
-      });
-    });
+  it("rejects invalid gitlab permalinks", () => {
+    const result = parseSpec(
+      `https://gitlab.com/group/project/-/tree/main/file.ts`,
+    );
+    expect(result.ok).toBe(false);
   });
 
-  describe("duplicate fields", () => {
-    it("rejects duplicate normal fields", () => {
-      expect(
-        parseSpec(`
-        repo: https://github.com/example/repo
-        repo: https://github.com/example/other
-        path: src/main.c
-        lang: c
-      `),
-      ).toMatchObject({
-        ok: false,
-        error: ParseErrors.duplicateField("repo"),
-      });
-    });
+  it("rejects invalid line ranges", () => {
+    const result = parseSpec(
+      `https://github.com/org/repo/blob/main/file.ts#L20-L10`,
+    );
+    expect(result.ok).toBe(false);
   });
 
-  describe("optional fields", () => {
-    it("parses optional fields", () => {
-      const spec = expectOk(`
-        repo: https://gitlab.com/example/repo
-        path: src/main.c
-        lang: c
-        commit: abc123
-        mode: diff
-        context: 8
-        note: test note
-      `);
+  it("rejects malformed line anchors", () => {
+    const result = parseSpec(
+      `https://github.com/org/repo/blob/main/file.ts#foo`,
+    );
+    expect(result.ok).toBe(false);
+  });
 
-      expect(spec.ref).toEqual({
-        type: "commit",
-        value: "abc123",
-      });
+  it("rejects invalid metadata lines", () => {
+    const result = parseSpec(`
+      https://example.com/file.ts
+      foo: bar
+    `);
+    expect(result.ok).toBe(false);
+  });
 
-      expect(spec.mode).toBe("diff");
+  it("rejects more than 2 lines", () => {
+    const result = parseSpec(`
+      https://example.com/file.ts
+      lang: ts
+      extra: value
+    `);
+    expect(result.ok).toBe(false);
+  });
 
-      expect(spec.context).toBe(8);
+  it("detects special filenames", () => {
+    const result = parseSpec(`https://example.com/Dockerfile`);
 
-      expect(spec.note).toBe("test note");
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.target.lang).toBe("dockerfile");
+  });
+
+  it("preserves hashes only as renderer metadata", () => {
+    const result = parseSpec(
+      `https://github.com/org/repo/blob/main/file.ts#L1-L5`,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    expect(result.target.permalink.hash).toBe("#L1-L5");
+    expect(result.target.contentURL.hash).toBe("");
   });
 });
