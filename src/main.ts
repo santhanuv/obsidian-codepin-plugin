@@ -6,7 +6,7 @@ import {
 } from "obsidian";
 
 import { getFetchErrorMessage } from "./diagnostics";
-import { fetchText } from "./http-client";
+import { fetchText, FetchTextResult } from "./http-client";
 import { parseSpec } from "./parser";
 import { GitRelayMetrics } from "./telemetry/metrics";
 
@@ -14,6 +14,7 @@ export default class GitRelayPlugin extends Plugin {
   private debugMode = false;
   private metrics: GitRelayMetrics | null = null;
   private cache = new Map<string, string>();
+  private inflight = new Map<string, Promise<FetchTextResult>>();
 
   async onload() {
     this.registerGitRelayCommands();
@@ -35,35 +36,24 @@ export default class GitRelayPlugin extends Plugin {
 
         // Key is the full file URL; line slicing happens after cache retrieval.
         const cacheKey = parseResult.target.contentURL.toString();
-        let text: string;
 
-        if (this.cache.has(cacheKey)) {
-          this.metrics?.incrCacheHit();
-          text = this.cache.get(cacheKey)!;
-        } else {
-          this.metrics?.incrCacheMiss();
-          this.metrics?.incrFetchRequest();
+        const getContentResult = await this.fetchContent(cacheKey);
+        if (!getContentResult.ok) {
+          this.metrics?.incrFetchFailure();
+          console.error("[git-relay]", "fetch failed: ", {
+            source,
+            status: getContentResult.status,
+            body: getContentResult.body,
+          });
 
-          const fetchResult = await fetchText(cacheKey);
-          if (!fetchResult.ok) {
-            this.metrics?.incrFetchFailure();
-            console.error("[git-relay]", "fetch failed: ", {
-              source,
-              status: fetchResult.status,
-              body: fetchResult.body,
-            });
-
-            this.renderGitRelayError(
-              container,
-              getFetchErrorMessage(fetchResult.status),
-            );
-            return;
-          }
-
-          text = fetchResult.text;
-          this.cache.set(cacheKey, text);
+          this.renderGitRelayError(
+            container,
+            getFetchErrorMessage(getContentResult.status),
+          );
+          return;
         }
 
+        const text = getContentResult.text;
         const { start: startLine, end: endLine } = parseResult.target.lines;
 
         const fileLines = text.split(/\r?\n/);
@@ -102,6 +92,41 @@ export default class GitRelayPlugin extends Plugin {
         );
       },
     );
+  }
+
+  private async fetchContent(cacheKey: string): Promise<FetchTextResult> {
+    if (this.cache.has(cacheKey)) {
+      this.metrics?.incrCacheHit();
+      const text = this.cache.get(cacheKey)!;
+
+      return { ok: true, text };
+    }
+
+    this.metrics?.incrCacheMiss();
+
+    if (this.inflight.has(cacheKey)) {
+      this.metrics?.incrInflightHits();
+      const inflightRequest = this.inflight.get(cacheKey)!;
+
+      const fetchResult = await inflightRequest;
+      return fetchResult;
+    }
+
+    this.metrics?.incrFetchRequest();
+    const fetchPromise = fetchText(cacheKey);
+    this.inflight.set(cacheKey, fetchPromise);
+
+    try {
+      const fetchResult = await fetchPromise;
+      if (!fetchResult.ok) {
+        return fetchResult;
+      }
+
+      this.cache.set(cacheKey, fetchResult.text);
+      return fetchResult;
+    } finally {
+      this.inflight.delete(cacheKey);
+    }
   }
 
   private renderGitRelayError(container: HTMLElement, error: string) {
