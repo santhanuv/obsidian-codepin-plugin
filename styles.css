@@ -8,21 +8,47 @@ If your plugin does not need CSS, delete this file.
 */
 
 .git-relay-header {
-  padding: 6px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  background-color: var(--background-secondary);
-  color: var(--text-muted);
+  padding: var(--size-4-3) var(--size-4-3);
+
+  font-size: var(--font-ui-small);
   font-family: var(--font-monospace);
+  color: var(--text-muted);
+  background-color: var(--background-secondary);
+
+  border-radius: var(--radius-s);
+  margin-bottom: var(--size-4-2);
 }
 
-.git-relay-footer {
-  padding: 6px 10px;
-  font-size: 14px;
-  border-radius: 6px;
-  margin-top: 8px;
-  background-color: var(--background-secondary);
-  color: var(--text-muted);
-  font-family: var(--font-monospace);
+.git-relay-header-title {
+  display: flex;
+  align-items: end;
+  gap: var(--size-4-1);
+
+  color: inherit;
+  text-decoration: none;
+  max-width: calc(100% - 32px);
+}
+
+.git-relay-header-title:hover {
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.git-relay-header-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.git-relay-header-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  flex-shrink: 0;
+  --icon-size: var(--icon-xs);
+
+  position: relative;
+  bottom: 1px;
 }

@@ -3,6 +3,7 @@ import {
   MarkdownRenderer,
   Notice,
   Plugin,
+  setIcon,
 } from "obsidian";
 
 import { getFetchErrorMessage } from "./diagnostics";
@@ -68,11 +69,11 @@ export default class GitRelayPlugin extends Plugin {
           snippetLines = dedent(snippetLines);
         }
 
-        const header = container.createEl("div", { cls: "git-relay-header" });
-        header.createEl("span", {
-          text: `${parseResult.target.name}`,
-        });
-
+        this.createGitRelayHeader(
+          container,
+          parseResult.target.name,
+          parseResult.target.permalink.toString(),
+        );
         const codeContainer = container.createDiv({
           cls: "git-relay-code",
         });
@@ -127,13 +128,6 @@ export default class GitRelayPlugin extends Plugin {
     } finally {
       this.inflight.delete(cacheKey);
     }
-  }
-
-  private renderGitRelayError(container: HTMLElement, error: string) {
-    container.createEl("p", {
-      text: `Error: ${error}`,
-      cls: "git-relay-error-text",
-    });
   }
 
   private registerGitRelayCommands() {
@@ -202,6 +196,42 @@ export default class GitRelayPlugin extends Plugin {
         new Notice(`Git Relay: cleared ${size} cached entries`, 2000);
       },
     });
+  }
+
+  private renderGitRelayError(container: HTMLElement, error: string) {
+    container.createEl("p", {
+      text: `Error: ${error}`,
+      cls: "git-relay-error-text",
+    });
+  }
+
+  private createGitRelayHeader(
+    container: HTMLElement,
+    title: string,
+    permalink: string,
+  ): HTMLElement {
+    const headerEl = container.createEl("div", {
+      cls: "git-relay-header",
+    });
+
+    const fileLinkEl = headerEl.createEl("a", {
+      href: permalink,
+      cls: "git-relay-header-title",
+    });
+
+    const fileIconEl = fileLinkEl.createEl("div", {
+      cls: "git-relay-header-title-icon",
+    });
+
+    fileIconEl.setAttr("aria-hidden", "true");
+    setIcon(fileIconEl, "file");
+
+    fileLinkEl.createEl("span", {
+      text: title,
+      cls: "git-relay-header-title-text",
+    });
+
+    return headerEl;
   }
 }
 
