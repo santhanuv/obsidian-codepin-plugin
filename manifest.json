@@ -1,6 +1,6 @@
 {
-  "id": "obsidian-git-relay-plugin",
-  "name": "Git Relay",
+  "id": "obsidian-codepin-plugin",
+  "name": "Codepin",
   "version": "1.0.0",
   "minAppVersion": "1.5.7",
   "description": "Embed code snippets from Git permalinks directly into notes.",

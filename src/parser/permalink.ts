@@ -1,4 +1,5 @@
-import { ParseErrors } from "./diagnostics";
+import { ParseErrors } from "../diagnostics";
+import { Result } from "../result";
 
 const SPECIAL_FILENAMES: Record<string, string> = {
   Dockerfile: "dockerfile",
@@ -6,68 +7,22 @@ const SPECIAL_FILENAMES: Record<string, string> = {
   Justfile: "make",
 };
 
-type RelayLineRange = { start: number; end: number | null };
+type CodepinLineRange = { start: number; end: number | null };
 
 type GitHost = "gitlab" | "github" | "generic";
 
-interface GitRelayTarget {
+type FileMetadata = { filename: string; extension?: string };
+
+export interface CodepinTarget {
   permalink: URL;
   host: GitHost;
   contentURL: URL;
   name: string;
-  lines: RelayLineRange;
+  lines: CodepinLineRange;
   lang?: string | undefined;
 }
 
-type ParseResult =
-  | { ok: true; target: GitRelayTarget }
-  | { ok: false; error: string };
-
-type FileMetadata = { filename: string; extension?: string };
-
-export function parseSpec(source: string): ParseResult {
-  const lines = source
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length === 0 || lines.length > 2) {
-    return {
-      ok: false,
-      error: ParseErrors.invalidSpec(),
-    };
-  }
-
-  const [permalink, langLine] = lines;
-
-  if (!permalink) {
-    return {
-      ok: false,
-      error: ParseErrors.missingPermalink(),
-    };
-  }
-
-  let lang: string | undefined;
-  if (langLine) {
-    const [key, value] = langLine
-      .split(":")
-      .map((pair) => pair.trim())
-      .filter(Boolean);
-
-    if (key !== "lang" || !value) {
-      return {
-        ok: false,
-        error: ParseErrors.invalidLangLine(),
-      };
-    }
-
-    lang = value;
-  }
-
-  return parsePermalink(permalink, lang);
-}
-
-function parsePermalink(permalink: string, lang?: string): ParseResult {
+export function parsePermalink(permalink: string): Result<CodepinTarget> {
   let sourceURL: URL;
 
   try {
@@ -75,7 +30,7 @@ function parsePermalink(permalink: string, lang?: string): ParseResult {
   } catch {
     return {
       ok: false,
-      error: ParseErrors.invalidPermalikLine(),
+      error: ParseErrors.invalidPermalink(),
     };
   }
 
@@ -128,10 +83,10 @@ function parsePermalink(permalink: string, lang?: string): ParseResult {
     }
   }
 
-  // hashes are renderer metadata
+  // Remove fragment identifiers from raw content URL.
   contentURL.hash = "";
 
-  let lineRange: RelayLineRange | null = { start: 1, end: null };
+  let lineRange: CodepinLineRange | null = { start: 1, end: null };
 
   if (sourceURL.hash) {
     lineRange = parseLineRange(sourceURL.hash);
@@ -154,12 +109,9 @@ function parsePermalink(permalink: string, lang?: string): ParseResult {
   }
 
   const fileMetadata = getFileMetadata(contentURL.pathname);
+  const lang = fileMetadata?.extension?.toLowerCase();
 
-  if (!lang) {
-    lang = fileMetadata?.extension;
-  }
-
-  const relayTarget: GitRelayTarget = {
+  const codepinTarget: CodepinTarget = {
     permalink: sourceURL,
     host,
     contentURL: contentURL,
@@ -168,7 +120,7 @@ function parsePermalink(permalink: string, lang?: string): ParseResult {
     lang: lang,
   };
 
-  return { ok: true, target: relayTarget };
+  return { ok: true, data: codepinTarget };
 }
 
 function toGithubRawURL(permalink: URL): URL | null {
@@ -194,7 +146,7 @@ function toGitlabRawURL(permalink: URL): URL | null {
   );
 }
 
-function parseLineRange(hash: string): RelayLineRange | null {
+function parseLineRange(hash: string): CodepinLineRange | null {
   const match = hash.match(/^#L(\d+)(?:-L?(\d+))?$/);
 
   if (!match) {

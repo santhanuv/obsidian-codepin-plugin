@@ -1,14 +1,9 @@
 export const ParseErrors = {
-  invalidSpec: () =>
-    "Invalid git-relay block. Expected a permalink on line 1 and optional metadata on line 2 only.",
+  invalidSpec: () => "Invalid codepin block.",
 
-  missingPermalink: () =>
-    "Missing permalink on line 1. Expected a GitHub, GitLab, or raw content URL.",
+  invalidPermalink: () => "Invalid 'permalink' URL.",
 
-  invalidPermalikLine: () => "Invalid line 1. Expected a permalink URL.",
-
-  invalidLangLine: () =>
-    "Invalid line 2. Expected a metadata field in the format 'key: value'.",
+  invalidRawContentURL: () => "Invalid 'rawContentURL'.",
 
   unsupportedProtocol: (protocol: string) =>
     `Unsupported URL protocol: '${protocol}'. Expected 'https://' or 'http://'.`,
@@ -23,7 +18,53 @@ export const ParseErrors = {
     "Invalid line range. Expected '#Lx', '#Lx-Ly', or '#Lx-y'.",
 
   invalidLineNumbers: () =>
-    "Line numbers must be greater than 0 and start line must not exceed end line.",
+    "Invalid line numbers. Line numbers must be greater than 0 and start line must not exceed end line.",
+
+  specSnippetLineMismatch: (endLine: number, actualLines: number) =>
+    `Snippet has ${actualLines} line${actualLines === 1 ? "" : "s"} but 'endLine' is ${endLine}.`,
+
+  invalidMetadata: () => "Invalid metadata in codepin spec.",
+
+  specMissingMetadataSep: () =>
+    "Missing metadata separator ('---') in codepin spec.",
+
+  specMissingPermalink: () => "Missing 'permalink' field in codepin spec.",
+
+  specMissingRawContentURL: () =>
+    "Missing 'rawContentURL' field in codepin spec.",
+
+  specMissingFilename: () => "Missing 'filename' field in codepin spec.",
+
+  specMissingStartLine: () =>
+    "Missing or invalid 'startLine' field in codepin spec.",
+
+  specMissingEndLine: () =>
+    "Missing or invalid 'endLine' field in codepin spec.",
+
+  specMissingSnippetHash: () => "Missing 'snippetHash' field in codepin spec.",
+
+  specMissingSourceHash: () => "Missing 'sourceHash' field in codepin spec.",
+
+  specInvalidLang: () =>
+    "Invalid 'lang' field in codepin spec. Expected a string.",
+
+  specInvalidSnippetHash: () =>
+    "Invalid 'snippetHash'. Expected a SHA-256 hex string.",
+
+  specInvalidSourceHash: () =>
+    "Invalid 'sourceHash'. Expected a SHA-256 hex string.",
+
+  specSnippetHashMismatch: () =>
+    "Invalid code snippet: the snippet content does not match 'snippetHash'.",
+
+  specEmptySnippet: () => "codepin spec contains an empty snippet.",
+};
+
+export const HashErrors = {
+  snippetHashingFailed: () => "Failed to hash snippet.",
+  sourceHashingFailed: () => "Failed to hash source.",
+  snippetIntegrityFailed: () =>
+    "Snippet has changed since this codepin was created.",
 };
 
 export const FetchErrors = {

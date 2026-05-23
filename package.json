@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-git-relay-plugin",
+  "name": "obsidian-codepin-plugin",
   "version": "1.0.0",
   "description": "Project code context from Git repositories directly into notes",
   "main": "main.js",
@@ -26,6 +26,7 @@
     "vitest": "4.1.5"
   },
   "dependencies": {
-    "obsidian": "latest"
+    "obsidian": "latest",
+    "yaml": "2.9.0"
   }
 }
