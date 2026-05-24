@@ -1,89 +1,61 @@
 import {
-  MarkdownRenderChild,
-  MarkdownRenderer,
   Notice,
   Plugin,
   setIcon,
+  MarkdownRenderChild,
+  MarkdownRenderer,
 } from "obsidian";
 
-import { getFetchErrorMessage } from "./diagnostics";
+import { getFetchErrorMessage, HashErrors } from "./diagnostics";
 import { fetchText, FetchTextResult } from "./http-client";
-import { parseSpec } from "./parser";
-import { GitRelayMetrics } from "./telemetry/metrics";
+import { CodepinMetrics } from "./telemetry/metrics";
+import { parsePermalink } from "./parser/permalink";
+import {
+  createSpec,
+  decodeSpec,
+  encodeSpec,
+  verifySnippetIntegrity,
+  renderSnippet,
+} from "./parser/spec";
+import { CodepinModal } from "./modal";
 
-export default class GitRelayPlugin extends Plugin {
+export default class CodepinPlugin extends Plugin {
   private debugMode = false;
-  private metrics: GitRelayMetrics | null = null;
+  private metrics: CodepinMetrics | null = null;
   private cache = new Map<string, string>();
   private inflight = new Map<string, Promise<FetchTextResult>>();
 
   async onload() {
-    this.registerGitRelayCommands();
+    this.registerCodepinCommands();
 
     this.registerMarkdownCodeBlockProcessor(
-      "git-relay",
+      "codepin",
       async (source, el, ctx) => {
         this.metrics?.incrProcessorRuns();
 
         const container = el.createDiv({
-          cls: "git-relay-content",
+          cls: "codepin-content",
         });
 
-        const parseResult = parseSpec(source);
-        if (!parseResult.ok) {
-          this.renderGitRelayError(container, parseResult.error);
+        const decodeResult = decodeSpec(source);
+        if (!decodeResult.ok) {
+          this.renderCodepinError(container, decodeResult.error);
           return;
         }
 
-        // Key is the full file URL; line slicing happens after cache retrieval.
-        const cacheKey = parseResult.target.contentURL.toString();
-
-        const getContentResult = await this.fetchContent(cacheKey);
-        if (!getContentResult.ok) {
-          this.metrics?.incrFetchFailure();
-          console.error("[git-relay]", "fetch failed: ", {
-            source,
-            status: getContentResult.status,
-            body: getContentResult.body,
-          });
-
-          this.renderGitRelayError(
-            container,
-            getFetchErrorMessage(getContentResult.status),
-          );
-          return;
-        }
-
-        const text = getContentResult.text;
-        const { start: startLine, end: endLine } = parseResult.target.lines;
-
-        const fileLines = text.split(/\r?\n/);
-        let snippetLines = fileLines.slice(
-          startLine - 1,
-          endLine ?? fileLines.length,
-        );
-
-        const isPartialSnippet =
-          startLine !== 1 || (endLine !== null && endLine !== fileLines.length);
-        if (isPartialSnippet) {
-          snippetLines = dedent(snippetLines);
-        }
-
-        this.createGitRelayHeader(
+        this.createCodepinHeader(
           container,
-          parseResult.target.name,
-          parseResult.target.permalink.toString(),
+          decodeResult.data.filename,
+          decodeResult.data.permalink.toString(),
         );
+
         const codeContainer = container.createDiv({
-          cls: "git-relay-code",
+          cls: "codepin-code",
         });
         const child = new MarkdownRenderChild(codeContainer);
         ctx.addChild(child);
 
-        const lang = parseResult.target.lang ?? "";
-        const content = snippetLines.join("\n");
-
-        const markdown = `\`\`\`${lang}\n${content}\n\`\`\``;
+        const markdown = renderSnippet(decodeResult.data);
         await MarkdownRenderer.render(
           this.app,
           markdown,
@@ -91,8 +63,26 @@ export default class GitRelayPlugin extends Plugin {
           ctx.sourcePath,
           child,
         );
+
+        const snippetIntegrity = await verifySnippetIntegrity(
+          decodeResult.data,
+        );
+        if (!snippetIntegrity.ok) {
+          this.createCodepinFooter(
+            container,
+            HashErrors.snippetIntegrityFailed(),
+          );
+        }
       },
     );
+  }
+
+  onunload() {
+    if (this.debugMode) {
+      this.removeCommand("codepin-print-metrics");
+    }
+
+    return;
   }
 
   private async fetchContent(cacheKey: string): Promise<FetchTextResult> {
@@ -130,97 +120,134 @@ export default class GitRelayPlugin extends Plugin {
     }
   }
 
-  private registerGitRelayCommands() {
+  private registerCodepinCommands() {
     this.addCommand({
-      id: "git-relay-toggle-debug-mode",
+      id: "codepin-toggle-debug-mode",
       name: "Toggle debug mode",
-      callback: () => {
-        this.debugMode = !this.debugMode;
-
-        if (this.debugMode) {
-          this.metrics = new GitRelayMetrics();
-
-          this.addCommand({
-            id: "git-relay-print-metrics",
-            name: "Print relay metrics",
-            callback: () => {
-              const snapshot = this.metrics?.snapshot();
-
-              if (!snapshot) {
-                return;
-              }
-
-              console.debug("[git-relay] counters", snapshot.counters);
-
-              console.debug("[git-relay] ratios", {
-                fetchFailureRate: `${(
-                  snapshot.ratios.fetchFailureRate * 100
-                ).toFixed(2)}%`,
-
-                cacheHitRatio: `${(snapshot.ratios.cacheHitRatio * 100).toFixed(
-                  2,
-                )}%`,
-
-                fetchesPerRender: snapshot.ratios.fetchesPerRender.toFixed(2),
-              });
-            },
-          });
-
-          console.debug("[git-relay] debug mode enabled");
-          new Notice(
-            `Git Relay: debug mode ${this.debugMode ? "enabled" : "disabled"}`,
-            2000,
-          );
-        } else {
-          this.metrics = null;
-
-          this.removeCommand("git-relay-print-metrics");
-          console.debug("[git-relay] debug mode disabled");
-
-          new Notice(
-            `Git Relay: debug mode ${this.debugMode ? "enabled" : "disabled"}`,
-            2000,
-          );
-        }
-      },
+      callback: () => this.toggleDebugMode(),
     });
 
     this.addCommand({
-      id: "git-relay-clear-cache",
-      name: "Clear relay cache",
+      id: "codepin-clear-cache",
+      name: "Clear cache",
       callback: () => {
         const size = this.cache.size;
 
         this.cache.clear();
-        console.debug("[git-relay] cleared cache", { entries: size });
-        new Notice(`Git Relay: cleared ${size} cached entries`, 2000);
+        console.debug("[codepin] cleared cache", { entries: size });
+        new Notice(`Codepin: cleared ${size} cached entries`, 2000);
+      },
+    });
+
+    this.addCommand({
+      id: "codepin-insert-spec",
+      name: "Insert spec",
+      editorCallback: (editor) => {
+        new CodepinModal(this.app, async (url) => {
+          const parseResult = parsePermalink(url);
+          if (!parseResult.ok) {
+            new Notice(parseResult.error, 0);
+            return;
+          }
+
+          const cacheKey = parseResult.data.contentURL.toString();
+
+          const getContentResult = await this.fetchContent(cacheKey);
+          if (!getContentResult.ok) {
+            console.error("[codepin]", "fetch failed: ", {
+              permalink: parseResult.data.permalink,
+              status: getContentResult.status,
+              body: getContentResult.body,
+            });
+
+            new Notice(getFetchErrorMessage(getContentResult.status), 0);
+            return;
+          }
+
+          const createSpecResult = await createSpec(
+            parseResult.data,
+            getContentResult.text,
+          );
+          if (!createSpecResult.ok) {
+            console.error(
+              "[codepin]",
+              "create spec failed: ",
+              createSpecResult.error,
+            );
+            new Notice(`Insert spec failed. ${createSpecResult.error}`, 0);
+            return;
+          }
+
+          const encodedSpec = encodeSpec(createSpecResult.data);
+          editor.replaceRange(encodedSpec, editor.getCursor());
+        }).open();
       },
     });
   }
 
-  private renderGitRelayError(container: HTMLElement, error: string) {
-    container.createEl("p", {
-      text: `Error: ${error}`,
-      cls: "git-relay-error-text",
+  private printCodepinMetrics() {
+    const snapshot = this.metrics?.snapshot();
+
+    if (!snapshot) {
+      return;
+    }
+
+    console.debug("[codepin] counters", snapshot.counters);
+
+    console.debug("[codepin] ratios", {
+      cacheHitRatio: `${(snapshot.ratios.cacheHitRatio * 100).toFixed(2)}%`,
     });
   }
 
-  private createGitRelayHeader(
+  private toggleDebugMode() {
+    this.debugMode = !this.debugMode;
+
+    if (this.debugMode) {
+      this.metrics = new CodepinMetrics();
+
+      this.addCommand({
+        id: "codepin-print-metrics",
+        name: "Print metrics",
+        callback: () => this.printCodepinMetrics(),
+      });
+
+      console.debug("[codepin] debug mode enabled");
+    } else {
+      this.metrics = null;
+
+      this.removeCommand("codepin-print-metrics");
+      console.debug("[codepin] debug mode disabled");
+    }
+
+    new Notice(
+      `Codepin: debug mode ${this.debugMode ? "enabled" : "disabled"}`,
+      2000,
+    );
+  }
+
+  private renderCodepinError(container: HTMLElement, error: string) {
+    container.createEl("p", {
+      text: `Error: ${error}`,
+      cls: "codepin-error-text",
+    });
+  }
+
+  private createCodepinHeader(
     container: HTMLElement,
     title: string,
     permalink: string,
   ): HTMLElement {
     const headerEl = container.createEl("div", {
-      cls: "git-relay-header",
+      cls: "codepin-header",
     });
 
     const fileLinkEl = headerEl.createEl("a", {
       href: permalink,
-      cls: "git-relay-header-title",
+      cls: "codepin-header-title",
     });
 
     const fileIconEl = fileLinkEl.createEl("div", {
-      cls: "git-relay-header-title-icon",
+      cls: "codepin-header-title-icon",
     });
 
     fileIconEl.setAttr("aria-hidden", "true");
@@ -228,28 +255,27 @@ export default class GitRelayPlugin extends Plugin {
 
     fileLinkEl.createEl("span", {
       text: title,
-      cls: "git-relay-header-title-text",
+      cls: "codepin-header-title-text",
     });
 
     return headerEl;
   }
-}
 
-function dedent(lines: string[]): string[] {
-  let minIndent = Infinity;
+  private createCodepinFooter(container: HTMLElement, message: string) {
+    const footerEL = container.createEl("div", {
+      cls: "codepin-footer",
+    });
 
-  for (const line of lines) {
-    if (line.trim().length === 0) {
-      continue;
-    }
+    const warningIconEl = footerEL.createEl("div", {
+      cls: "codepin-footer-icon",
+    });
 
-    const indent = line.length - line.trimStart().length;
-    minIndent = Math.min(minIndent, indent);
+    warningIconEl.setAttr("aria-hidden", "true");
+    setIcon(warningIconEl, "triangle-alert");
+
+    footerEL.createEl("span", {
+      text: message,
+      cls: "codepin-footer-status-text",
+    });
   }
-
-  if (minIndent === Infinity || minIndent === 0) {
-    return lines;
-  }
-
-  return lines.map((line) => line.slice(minIndent));
 }
