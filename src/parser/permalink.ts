@@ -30,7 +30,7 @@ export function parsePermalink(permalink: string): Result<CodepinTarget> {
   } catch {
     return {
       ok: false,
-      error: ParseErrors.invalidPermalink(),
+      error: ParseErrors.invalidURL("permalink"),
     };
   }
 
@@ -155,9 +155,12 @@ function parseLineRange(hash: string): CodepinLineRange | null {
 
   const [, startStr, endStr] = match;
 
+  const start = startStr ? parseInt(startStr, 10) : null;
+  const end = endStr ? parseInt(endStr, 10) : null;
+
   return {
-    start: startStr ? parseInt(startStr, 10) : 1,
-    end: endStr ? parseInt(endStr, 10) : null,
+    start: start ?? 1,
+    end: end ? end : (start ?? null),
   };
 }
 

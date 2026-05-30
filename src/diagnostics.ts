@@ -1,9 +1,7 @@
 export const ParseErrors = {
   invalidSpec: () => "Invalid codepin block.",
 
-  invalidPermalink: () => "Invalid 'permalink' URL.",
-
-  invalidRawContentURL: () => "Invalid 'rawContentURL'.",
+  invalidURL: (fieldName: string) => `Invalid '${fieldName}'`,
 
   unsupportedProtocol: (protocol: string) =>
     `Unsupported URL protocol: '${protocol}'. Expected 'https://' or 'http://'.`,
@@ -28,41 +26,24 @@ export const ParseErrors = {
   specMissingMetadataSep: () =>
     "Missing metadata separator ('---') in codepin spec.",
 
-  specMissingPermalink: () => "Missing 'permalink' field in codepin spec.",
+  specMissingField: (fieldName: string) =>
+    `Missing '${fieldName}' field in codepin spec.`,
 
-  specMissingRawContentURL: () =>
-    "Missing 'rawContentURL' field in codepin spec.",
-
-  specMissingFilename: () => "Missing 'filename' field in codepin spec.",
-
-  specMissingStartLine: () =>
-    "Missing or invalid 'startLine' field in codepin spec.",
-
-  specMissingEndLine: () =>
-    "Missing or invalid 'endLine' field in codepin spec.",
-
-  specMissingSnippetHash: () => "Missing 'snippetHash' field in codepin spec.",
-
-  specMissingSourceHash: () => "Missing 'sourceHash' field in codepin spec.",
-
-  specInvalidLang: () =>
-    "Invalid 'lang' field in codepin spec. Expected a string.",
-
-  specInvalidSnippetHash: () =>
-    "Invalid 'snippetHash'. Expected a SHA-256 hex string.",
-
-  specInvalidSourceHash: () =>
-    "Invalid 'sourceHash'. Expected a SHA-256 hex string.",
+  specInvalidHash: (fieldName: string) =>
+    `Invalid '${fieldName}'. Expected a SHA-256 hex string.`,
 
   specSnippetHashMismatch: () =>
     "Invalid code snippet: the snippet content does not match 'snippetHash'.",
 
-  specEmptySnippet: () => "codepin spec contains an empty snippet.",
+  specEmptySnippet: () =>
+    "Snippet should contain atleast one non-empty character.",
 };
 
 export const HashErrors = {
   snippetHashingFailed: () => "Failed to hash snippet.",
-  sourceHashingFailed: () => "Failed to hash source.",
+
+  sourceContentHashingFailed: () => "Failed to hash source content.",
+
   snippetIntegrityFailed: () =>
     "Snippet has changed since this codepin was created.",
 };
