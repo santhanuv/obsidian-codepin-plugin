@@ -46,7 +46,7 @@ export default class CodepinPlugin extends Plugin {
         this.createCodepinHeader(
           container,
           decodeResult.data.filename,
-          decodeResult.data.permalink.toString(),
+          decodeResult.data.sourceURL.toString(),
         );
 
         const codeContainer = container.createDiv({

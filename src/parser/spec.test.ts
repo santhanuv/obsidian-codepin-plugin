@@ -6,6 +6,7 @@ import {
   decodeSpec,
   encodeSpec,
   hashContent,
+  SPEC_VERSION,
   verifySnippetIntegrity,
   type CodepinSpec,
 } from "./spec";
@@ -13,8 +14,7 @@ import {
 import type { CodepinTarget } from "./permalink";
 
 function expectOk<T>(result: { ok: boolean; data?: T; error?: string }): T {
-  expect(result.ok).toBe(true);
-
+  expect(result.ok, `Failed with error: ${result.error}`).toBe(true);
   if (!result.ok) {
     throw new Error(result.error ?? "expected ok result");
   }
@@ -63,8 +63,8 @@ describe("createSpec", () => {
 
     const spec = expectOk(result);
 
-    expect(spec.permalink).toBe(target.permalink.toString());
-    expect(spec.rawContentURL).toBe(target.contentURL.toString());
+    expect(spec.sourceURL).toBe(target.permalink.toString());
+    expect(spec.sourceContentURL).toBe(target.contentURL.toString());
     expect(spec.filename).toBe("file.ts");
     expect(spec.startLine).toBe(1);
     expect(spec.endLine).toBe(3);
@@ -73,7 +73,7 @@ describe("createSpec", () => {
       ["const a = 1;", "const b = 2;", "const c = 3;"].join("\n"),
     );
     expect(spec.snippetHash).toBeTruthy();
-    expect(spec.sourceHash).toBeTruthy();
+    expect(spec.sourceContentHash).toBeTruthy();
   });
 
   it("dedents partial snippets", async () => {
@@ -109,25 +109,27 @@ describe("createSpec", () => {
     const crlfSpec = expectOk(crlfResult);
 
     expect(lfSpec.snippetHash).toBe(crlfSpec.snippetHash);
-    expect(lfSpec.sourceHash).toBe(crlfSpec.sourceHash);
+    expect(lfSpec.sourceContentHash).toBe(crlfSpec.sourceContentHash);
   });
 });
 
 describe("encodeSpec / decodeSpec", () => {
   it("roundtrips a spec through encoding and decoding", async () => {
-    const snippet = ["const a = 1;", "const b = 2;"].join("\n");
+    const snippet = ["const a = 1;", "const b = 2;\n"].join("\n");
     const snippetHash = await hashContent(snippet);
 
     const spec: CodepinSpec = {
-      permalink: "https://github.com/org/repo/blob/main/file.ts#L1-L2",
-      rawContentURL: "https://raw.githubusercontent.com/org/repo/main/file.ts",
+      specVersion: SPEC_VERSION,
+      sourceURL: "https://github.com/org/repo/blob/main/file.ts#L1-L2",
+      sourceContentURL:
+        "https://raw.githubusercontent.com/org/repo/main/file.ts",
       filename: "file.ts",
       startLine: 1,
       endLine: 2,
       lang: "ts",
       snippet,
       snippetHash: snippetHash,
-      sourceHash: snippetHash,
+      sourceContentHash: snippetHash,
     };
 
     const encoded = encodeSpec(spec);
@@ -144,15 +146,17 @@ describe("encodeSpec / decodeSpec", () => {
 
   it("supports snippets containing markdown fences", () => {
     const spec: CodepinSpec = {
-      permalink: "https://github.com/org/repo/blob/main/file.ts#L1-L3",
-      rawContentURL: "https://raw.githubusercontent.com/org/repo/main/file.ts",
+      specVersion: SPEC_VERSION,
+      sourceURL: "https://github.com/org/repo/blob/main/file.ts#L1-L3",
+      sourceContentURL:
+        "https://raw.githubusercontent.com/org/repo/main/file.ts",
       filename: "file.ts",
       startLine: 1,
       endLine: 3,
       lang: "ts",
       snippet: ["function main() {", "```", "}"].join("\n"),
       snippetHash: "snippet-hash",
-      sourceHash: "source-hash",
+      sourceContentHash: "source-hash",
     };
 
     const encoded = encodeSpec(spec);
@@ -161,7 +165,7 @@ describe("encodeSpec / decodeSpec", () => {
 
   it("rejects specs without a metadata separator", () => {
     const result = decodeSpec(
-      ["permalink: https://example.com", "filename: file.ts"].join("\n"),
+      ["sourceURL: https://example.com", "filename: file.ts"].join("\n"),
     );
 
     expect(result.ok).toBe(false);
@@ -177,14 +181,15 @@ describe("encodeSpec / decodeSpec", () => {
 
   it("rejects snippetHash that is not valid SHA-256", () => {
     const source = [
-      "permalink: https://github.com/org/repo/blob/main/file.ts#L1-L2",
-      "rawContentURL: https://raw.githubusercontent.com/org/repo/main/file.ts",
+      `specVersion: ${SPEC_VERSION}`,
+      "sourceURL: https://github.com/org/repo/blob/main/file.ts#L1-L2",
+      "sourceContentURL: https://raw.githubusercontent.com/org/repo/main/file.ts",
       "filename: file.ts",
       "startLine: 1",
       "endLine: 2",
       "lang: ts",
       "snippetHash: invalidhash",
-      "sourceHash: invalidhash",
+      "sourceContentHash: invalidhash",
       "---",
       "const a = 1;",
     ].join("\n");
@@ -198,14 +203,15 @@ describe("encodeSpec / decodeSpec", () => {
     const snippetHash = await hashContent("different snippet");
 
     const source = [
-      "permalink: https://github.com/org/repo/blob/main/file.ts#L1-L1",
-      "rawContentURL: https://raw.githubusercontent.com/org/repo/main/file.ts",
+      `specVersion: ${SPEC_VERSION}`,
+      "sourceURL: https://github.com/org/repo/blob/main/file.ts#L1-L1",
+      "sourceContentURL: https://raw.githubusercontent.com/org/repo/main/file.ts",
       "filename: file.ts",
       "startLine: 1",
       "endLine: 1",
       "lang: ts",
       `snippetHash: ${snippetHash}`,
-      `sourceHash: ${snippetHash}`,
+      `sourceContentHash: ${snippetHash}`,
       "---",
       snippet,
     ].join("\n");
