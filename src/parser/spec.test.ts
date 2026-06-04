@@ -132,10 +132,10 @@ describe("encodeSpec / decodeSpec", () => {
       sourceContentHash: snippetHash,
     };
 
-    const encoded = encodeSpec(spec);
-    expect(encoded.startsWith("```codepin")).toBe(true);
+    const block = encodeSpec(spec);
+    expect(block.startsWith("```codepin")).toBe(true);
 
-    const inner = encoded.split("\n").slice(1, -1).join("\n");
+    const inner = block.split("\n").slice(1, -1).join("\n");
     const decoded = decodeSpec(inner);
 
     expect(decoded).toEqual({
@@ -159,8 +159,8 @@ describe("encodeSpec / decodeSpec", () => {
       sourceContentHash: "source-hash",
     };
 
-    const encoded = encodeSpec(spec);
-    expect(encoded.startsWith("````codepin")).toBe(true);
+    const block = encodeSpec(spec);
+    expect(block.startsWith("````codepin")).toBe(true);
   });
 
   it("rejects specs without a metadata separator", () => {

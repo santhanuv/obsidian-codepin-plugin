@@ -140,8 +140,8 @@ export default class CodepinPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "codepin-insert-spec",
-      name: "Insert spec",
+      id: "codepin-insert-block",
+      name: "Insert block",
       editorCallback: (editor) => {
         new CodepinModal(this.app, async (url) => {
           const parseResult = parsePermalink(url);
@@ -171,15 +171,15 @@ export default class CodepinPlugin extends Plugin {
           if (!createSpecResult.ok) {
             console.error(
               "[codepin]",
-              "create spec failed: ",
+              "create block failed: ",
               createSpecResult.error,
             );
-            new Notice(`Insert spec failed. ${createSpecResult.error}`, 0);
+            new Notice(`Insert block failed. ${createSpecResult.error}`, 0);
             return;
           }
 
-          const encodedSpec = encodeSpec(createSpecResult.data);
-          editor.replaceRange(encodedSpec, editor.getCursor());
+          const block = encodeSpec(createSpecResult.data);
+          editor.replaceRange(block, editor.getCursor());
         }).open();
       },
     });
