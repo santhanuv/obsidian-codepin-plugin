@@ -1,13 +1,39 @@
 stages:
   - verify
+  - release
 
 verify-job:
   image: node:24-bookworm-slim
   stage: verify
-
   script:
     - npm ci
     - npm run build
     - npm run lint
     - npm run test
+  artifacts:
+    paths:
+      - main.js
+      - manifest.json
+      - styles.css
+    expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
 
+release-job:
+  image: registry.gitlab.com/gitlab-org/cli:latest
+  stage: release
+  needs:
+    - job: verify-job
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v?[0-9]+\.[0-9]+\.[0-9]+$/'
+  script:
+    - |
+      glab release create "$CI_COMMIT_TAG" \
+        --name "Release $CI_COMMIT_TAG" \
+        --notes "Release $CI_COMMIT_TAG" \
+        --use-package-registry \
+        'main.js#main.js#package' \
+        'manifest.json#manifest.json#package' \
+        'styles.css#styles.css#package'
