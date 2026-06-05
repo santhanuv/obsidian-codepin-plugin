@@ -1,7 +1,7 @@
 {
   "name": "obsidian-codepin-plugin",
   "version": "1.0.0",
-  "description": "Project code context from Git repositories directly into notes",
+  "description": "Create durable source code references with embedded snippets and source context",
   "main": "main.js",
   "type": "module",
   "scripts": {

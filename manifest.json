@@ -3,7 +3,7 @@
   "name": "Codepin",
   "version": "1.0.0",
   "minAppVersion": "1.5.7",
-  "description": "Embed code snippets from Git permalinks directly into notes.",
+  "description": "Create durable source code references with embedded snippets and source context",
   "author": "Santhanu V",
   "authorUrl": "https://gitlab.com/santhanuv",
   "fundingUrl": "",

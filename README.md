@@ -98,3 +98,7 @@ This plugin is not yet available through the Obsidian Community Plugins director
 This plugin was created primarily for my own workflow and note-taking needs.
 
 Bug reports, usability improvements, documentation updates, and support for additional source providers are welcome. If you have an idea that would genuinely improve the workflow without breaking compatibility with existing Codepin blocks, feel free to open an issue or merge request for discussion.
+
+## Repository Mirrors
+
+GitLab is the canonical repository for this project. GitHub is maintained as a read-only mirror.
