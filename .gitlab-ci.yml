@@ -1,24 +1,13 @@
 stages:
-  - build
-  - test
+  - verify
 
-build-job:
+verify-job:
   image: node:24-bookworm-slim
-  stage: build
+  stage: verify
+
   script:
     - npm ci
     - npm run build
-
-unit-test-job:
-  image: node:24-bookworm-slim
-  stage: test
-  script:
-    - npm ci
+    - npm run lint
     - npm run test
 
-lint-test-job:
-  image: node:24-bookworm-slim
-  stage: test
-  script:
-    - npm ci
-    - npm run lint
