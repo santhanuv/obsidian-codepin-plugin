@@ -59,6 +59,28 @@ The cache is automatically cleared when Obsidian is closed. It can also be clear
 
 This plugin is not yet available through the Obsidian Community Plugins directory.
 
+### Install from a release
+
+1. Download the latest release assets:
+
+- main.js
+- manifest.json
+- styles.css
+
+1. Create a plugin directory inside your vault:
+
+```bash
+mkdir /path/to/vault/.obsidian/plugins/obsidian-codepin-plugin
+```
+
+1. Copy the downloaded files into that directory.
+
+2. Open Obsidian and enable the plugin from:
+
+```text
+Settings -> Community Plugins
+```
+
 ### Install from source
 
 1. Clone the repository:
@@ -83,7 +105,7 @@ This plugin is not yet available through the Obsidian Community Plugins director
 4. Open Obsidian and enable the plugin from:
 
    ```text
-   Settings → Community Plugins
+   Settings -> Community Plugins
    ```
 
 5. Reload Obsidian after rebuilding the plugin to pick up changes.
